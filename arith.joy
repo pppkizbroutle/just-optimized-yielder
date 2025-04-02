@@ -1,0 +1,16 @@
+arithmetic = # "x"
+	   | arithmetic , " + " , arithmetic
+	   | arithmetic , " - " , arithmetic
+	   | arithmetic , " * " , arithmetic
+	   | arithmetic , " / " , arithmetic
+	   | "(" , arithmetic , ")" ;
+
+boolean = # "b"
+	| boolean , " & " , boolean
+	| boolean , " | " , boolean
+	| arithmetic , " = " , arithmetic
+	| arithmetic , " <= " , arithmetic
+	| arithmetic , " >= " , arithmetic
+	| "(" , boolean , ")";
+
+expression = arithmetic | boolean;

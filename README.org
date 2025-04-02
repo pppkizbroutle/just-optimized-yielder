@@ -1,0 +1,277 @@
+#+title: Just Optimized Yielder
+#+author: Erik Rangel Limón
+
+
+* Joy: Just Optimized Yielder
+
+** Compilación
+
+   Ejecutar el siguiente comando:
+
+   #+begin_src bash
+cabal build
+   #+end_src
+
+** Ejemplo de ejecución
+
+   El siguiente comando hará un ejemplo de compilación del archivo
+   arith.joy que contiene un ejemplo de gramática con expresiones
+   aritméticas.
+
+   #+begin_src bash
+cabal run just-optimized-yielder -- arith.joy > arith.hs
+   #+end_src
+
+   #+begin_src bash
+ghci arith.hs
+Loaded package environment from /home/pppkizbroutle/.ghc/x86_64-linux-9.4.8/environments/default
+GHCi, version 9.4.8: https://www.haskell.org/ghc/  :? for help
+[1 of 2] Compiling Main             ( arith.hs, interpreted )
+Ok, one module loaded.
+ghci> sample $ mk_expression 20 1
+"x >= x & x = x | x >= x"
+"x + x - x / x / x * x >= (x) | x - x <= (x * x)"
+"x + x <= x"
+"(x * x >= (x))"
+"x + x"
+"x >= x - x | (b) & (b)"
+"(x / x + x = x + x + x - x)"
+"x / x + x * x * x / x * x / x * (x) - x - x - x"
+"x / x - (x * x + x + x + x + x) + (x) - x - x + x"
+"(x + x) + x"
+"(x - x) - x / x - x"
+   #+end_src
+   
+** Avances al 1ro de Abril 2025
+
+   La sesión pasada revisamos la implementación del analizador
+   sintáctico, y lo pusimos a prueba verificando que en efecto se
+   pudieran crear los árboles de sintaxis abstracta.
+
+   Los avances de esta semana principalmente son los siguientes:
+
+   En el archivo =Parser/Grammar.hs= puedes encontrar los siguientes dos
+   combinadores:
+
+   #+begin_src haskell :padlines no
+commentary :: Parser String
+commentary = do
+  _ <- string "(*"
+  inside
+  where
+    inside = do
+      c1 <- nxt
+      if c1 /= '*' then do
+        cs <- inside
+        return $ c1:cs
+        else do
+        c2 <- nxt
+        if c2 /= ')' then do
+          cs <- inside
+          return $ c1 : c2 : cs
+          else
+          return []
+
+tokenJoy :: Parser a -> Parser a
+tokenJoy p = do
+  _ <- token (commentary <|> string "")
+  x <- p
+  _ <- token (commentary <|> string "")
+  return x
+   #+end_src
+
+   Estos permiten añadir comentarios entre cualesquiera dos lexemas
+   del lenguaje.
+
+   #+begin_src haskell :padlines no
+alternation :: Parser JoyAST
+alternation = do
+  x <- aux
+  case x of
+    Left (_,t2) -> return t2
+    Right xs -> return $ Alternation xs
+  where
+    aux :: Parser (Either (Bool, JoyAST) [(Bool, JoyAST)])
+    aux = multiple <|> single
+    single = do
+      b <- tkJoyStr "#" <|> string ""
+      j <- concatenation
+      return $ Left (b == "#", j)
+    multiple = do
+      b <- tkJoyStr "#" <|> string ""
+      t <- concatenation
+      _ <- tkJoyStr "|"
+      rest <- aux
+      case rest of
+        Right ts -> return $ Right $ (b == "#", t) : ts
+        Left s -> return $ Right [(b == "#", t),s]
+   #+end_src
+
+   Se añadió la posibilidad de añadir el símbolo "#" antes de una
+   alternativa para indicar que esta alternativa puede ser tomada como
+   un "caso base". Más adelante explico por qué fue necesario.
+
+   El siguiente cambio es la definición del archivo =Compiler.Translate=
+   (No supe como llamarle a éste módulo, pero pretende traducir el
+   código de joy a un generador de /QuickCheck/).
+
+   En éste módulo sólo se encuentra la función =compile=, que convierte
+   el tipo de dato del árbol de sintaxis abstracta a =String=.
+
+   #+begin_src haskell
+compile :: JoyAST -> String
+compile (Terminal xs) = "return \"" ++ xs ++ "\"" 
+compile (Identifier xs) = "chooseInt (0,joyDepth - 1) >>= (`mk_" ++ intercalate "_" (words xs) ++ "` joyWidth)"
+compile (Reserved _) = undefined
+compile (Repetition j) = "chooseInt (0,joyWidth) >>= (concat <$>) . (`vectorOf` " ++ compile j ++ ")"
+compile (Option j) = "oneof [return \"\", " ++ compile j ++ "]"
+compile (Group j) = compile j
+compile (Concatenation js) =
+  let
+    strjs = map compile js
+    listj = "[" ++ intercalate ", " strjs ++ "]"
+  in
+    "concat <$> sequence " ++ listj
+compile (Alternation js) =
+  let
+    sj = map snd js
+    strjs = map compile sj
+    listj = "[" ++ intercalate ", " strjs ++ "]"
+  in
+    "oneof " ++ listj
+compile (Rule x (Alternation js)) =
+  let
+    fj = filter fst js
+    sj = filter (not . fst) js
+    var = intercalate "_" (words x)
+  in
+    if not (null fj) && not (null sj) then
+      "mk_" ++ var ++ " 0 joyWidth = " ++ compile (Alternation fj) ++ "\nmk_" ++ var ++ " joyDepth joyWidth = " ++ compile (Alternation sj)
+    else "mk_" ++ var ++  " joyDepth joyWidth = " ++ compile (Alternation js)
+compile (Rule x j) =
+  let
+    var = intercalate "_" (words x)
+  in
+    "mk_" ++ var ++  " joyDepth joyWidth = " ++ compile j
+   #+end_src
+
+   En el código intenté evitar el uso de variables usando el estilo
+   /pointfree/, con el objetivo de evitar el "shadowing" de variables
+   que pudiera definir el usuario.
+
+   Haré énfasis en la siguiente sección del código:
+
+   #+begin_src haskell :padlines no
+compile (Rule x (Alternation js)) =
+  let
+    fj = filter fst js
+    sj = filter (not . fst) js
+    var = intercalate "_" (words x)
+  in
+    if not (null fj) && not (null sj) then
+      "mk_" ++ var ++ " 0 joyWidth = " ++ compile (Alternation fj) ++ "\nmk_" ++ var ++ " joyDepth joyWidth = " ++ compile (Alternation sj)
+    else "mk_" ++ var ++  " joyDepth joyWidth = " ++ compile (Alternation js)
+   #+end_src
+
+   La idea principal para lograr hacer llamadas recursivas al
+   generador, es usando una variable de profundidad, que en principio
+   sería la profundidad del árbol de la gramática que se definió. Esto
+   representa un problema ya que, ¿cómo sabemos cuál de las alternativas
+   debería ser usada como caso base?
+
+   No pude encontrar mucha información al respecto, o si siquiera sea
+   posible determinar que una regla de producción es candidata a ser
+   un "caso base", por lo que eso fue el motivo para añadir el
+   caracter "#" al inicio de una alternativa, por ejemplo:
+
+   #+begin_src prog
+arithmetic = # "x"
+	   | arithmetic , " + " , arithmetic
+	   | arithmetic , " - " , arithmetic
+	   | arithmetic , " * " , arithmetic
+	   | arithmetic , " / " , arithmetic
+	   | "(" , arithmetic , ")" ;
+   #+end_src
+
+   (Aún me falta definir las palabras reservadas que tendrá el
+   lenguaje como =? int ?=, para éste caso imaginemos que las "x" son
+   números)
+
+   Y por eso es que en la función se realiza un filtro entre qué
+   reglas deben ser usadas como base y qué otras como caso recursivo.
+
+   En el ejemplo de ejecución que dejé arriba:
+
+   #+begin_src haskell :padlines no
+ghci> sample $ mk_expression 20 1
+   #+end_src
+
+   =20= es la profundidad máxima del árbol, y =1= viene siendo la anchura
+   (aunque en los ejemplos no se usa, puedes poner cualquier número,
+   sólo se llegaría a usar para la repetición, pero aún no la he
+   probado)
+
+   Aunque este ejemplo funcione, puedo anticipar un par de problemas:
+
+   - Cuando se llama cualquier otra variable del lenguaje se disminuye
+     en la profundidad en uno:
+
+     #+begin_src haskell :padlines no
+compile (Identifier xs) = "chooseInt (0,joyDepth - 1) >>= (`mk_" ++ intercalate "_" (words xs) ++ "` joyWidth)"
+     #+end_src
+
+     Como funciona es: Se elige un entero entre 0 y la profundidad
+     menos uno y llama al generador correspondiente con la profundidad
+     elegida y la misma anchura.
+
+     Sin embargo puede ser un problema pues ¿qué tal si quisiéramos
+     elegir entre una serie de operaciones?
+
+     #+begin_src prog
+operacion = suma
+	  | resta
+	  | multiplicacion
+	  | division ;
+
+suma = ...;
+
+...
+     #+end_src
+
+     En este caso si le ponemos que tenga una profundidad x al
+     generador de operación, para cualquier opción siempre a lo más
+     será (x-1).
+
+     Igual podríamos añadir un símbolo especial para indicar que no
+     queremos que disminuya la profundidad del árbol al llamar a otro
+     identificador.
+
+   - No hay revisión semántica.
+
+     No se revisa si se definen varias veces una misma regla de
+     producción, ni nada, jeje.
+
+   - El resultado no está optimizado:
+
+     Por ejemplo, el achivo que se produce =arith.hs=, queda algo así
+
+     #+begin_src haskell :padlines no
+mk_arithmetic 0 joyWidth = oneof [return "x"]
+     #+end_src
+
+     Cuando sencillamente podría ser:
+   
+     #+begin_src haskell :padlines no
+mk_arithmetic 0 joyWidth = return "x"
+     #+end_src
+
+     Y otros detalles.
+
+     ¿Quizá debería utilizar un lenguaje intermedio para esto?
+
+
+   Por esta semana sería todo.
+
+   ¿Algunas recomendaciones o correcciones?
+
+   Saludos :)
