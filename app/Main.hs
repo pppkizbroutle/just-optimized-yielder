@@ -21,6 +21,9 @@ compile x = do
   let r = parse grammar content
   case r of
     Nothing -> putStrLn "Parse fail"
-    Just (y,_) -> do
-      putStrLn "import Data.List\nimport Test.QuickCheck\n\n"
-      putStrLn $ intercalate "\n\n" $ map T.compile y
+    Just (y,rest) -> do
+      if not $ null rest then
+        putStrLn $ ("Parse fail:\n" ++ show y)
+        else do
+        putStrLn "import Data.List\nimport Test.QuickCheck\n\n"
+        putStrLn $ intercalate "\n\n" $ map T.compile y

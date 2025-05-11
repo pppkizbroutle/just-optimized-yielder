@@ -1,16 +1,31 @@
-arithmetic = # "x"
-	   | arithmetic , " + " , arithmetic
-	   | arithmetic , " - " , arithmetic
-	   | arithmetic , " * " , arithmetic
-	   | arithmetic , " / " , arithmetic
-	   | "(" , arithmetic , ")" ;
+var = ? alphabetic lower ? , { ? alphabetic ? | ? digit ? } {0, 2};
 
-boolean = # "b"
-	| boolean , " & " , boolean
-	| boolean , " | " , boolean
-	| arithmetic , " = " , arithmetic
-	| arithmetic , " <= " , arithmetic
-	| arithmetic , " >= " , arithmetic
+lambda = "\\" , {var, " "} {1,*} , "-> ", expression;
+
+arithmetic = # ? ufloat ?
+	   | arithmetic , arithmetic operator , arithmetic
+	   | "(" , arithmetic , ")";
+
+arithmetic operator = " + "
+	   	    | " - "
+		    | " * "
+		    | " / ";
+
+boolean = # "True" | # "False"
+	| "not " , boolean 
+	| boolean , boolean operator , boolean
+	| arithmetic , comparison operator , arithmetic
 	| "(" , boolean , ")";
 
-expression = arithmetic | boolean;
+boolean operator = " && "
+		 | " || ";
+
+comparison operator = " == "
+	   	    | " <= "
+		    | " >= "
+		    | " < "
+		    | " > ";
+
+expression = *boolean
+	   | *arithmetic
+	   | *lambda;

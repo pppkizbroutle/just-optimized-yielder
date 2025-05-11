@@ -11,9 +11,9 @@ data JoyAST = Rule String JoyAST
             | Concatenation [JoyAST]
             | Group JoyAST
             | Option JoyAST
-            | Repetition JoyAST
+            | Repetition JoyAST (Maybe (Int, Int))
             | Reserved String
-            | Identifier String
+            | Identifier Bool String
             | Terminal String deriving Show
 
 commentary :: Parser String
@@ -44,24 +44,29 @@ tokenJoy p = do
 tkJoyStr :: String -> Parser String
 tkJoyStr = tokenJoy . string
   
-word :: Parser String
-word = do
+initialWord :: Parser String
+initialWord = do
   c <- sat isAlpha nxt
   cs <- many (sat (\x -> isAlpha x || isDigit x || (x == '_')) nxt)
   return (c:cs)
 
-tkword :: Parser String
-tkword = tokenJoy word
+word :: Parser String
+word = some $ sat (\x -> isAlpha x || isDigit x || (x == '_')) nxt
 
 identifier :: Parser JoyAST
-identifier = fmap (Identifier . intercalate " ") $ some tkword
+identifier = do
+  sym <- tkJoyStr "*" <|> string ""
+  first <- tokenJoy initialWord
+  rest <- many $ tokenJoy word
+  return $ Identifier (null sym) $ intercalate " " $ first : rest
 
 reserved :: Parser JoyAST
 reserved = do
   _ <- tkJoyStr "?"
-  res <- some tkword
+  first <- tokenJoy initialWord
+  rest <- many $ tokenJoy word
   _ <- tkJoyStr "?"
-  return $ Reserved $ intercalate " " res
+  return $ Reserved $ intercalate " " $ first : rest
 
 terminal :: Parser JoyAST
 terminal = tokenJoy (single <|> double)
@@ -104,7 +109,21 @@ repetition = do
   _ <- tkJoyStr "{"
   alt <- alternation
   _ <- tkJoyStr "}"
-  return $ Repetition alt
+  limit <- tokenJoy ((Just <$> limitAux) <|> return Nothing)
+  return $ Repetition alt limit
+
+number :: Parser Int
+number = do
+  xs <- some $ (sat isDigit nxt)
+  return $ read xs
+limitAux :: Parser (Int, Int)
+limitAux = do
+  _ <- tkJoyStr "{"
+  n1 <- tokenJoy number
+  _ <- tkJoyStr ","
+  n2 <- tokenJoy number <|> (tkJoyStr "*" >> return (-1))
+  _ <- tkJoyStr "}"
+  return (n1,n2)
 
 alternation :: Parser JoyAST
 alternation = do
@@ -142,7 +161,9 @@ concatenation = multiple <|> single
 
 rule :: Parser JoyAST
 rule = do
-  xs <- (intercalate " ") <$> some tkword
+  first <- tokenJoy initialWord
+  rest <- many $ tokenJoy word
+  let xs = intercalate " " $ first : rest
   _ <- tkJoyStr "="
   alt <- alternation
   _ <- tkJoyStr ";"
