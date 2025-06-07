@@ -4,12 +4,14 @@ import Parser.Grammar
 import Parser.Parser
 
 import Control.Applicative
+
 import Data.List
 import Data.Char
 
 compile :: JoyAST -> String
+compile Enum = "return \"@\""
 compile (Terminal xs) = "return \"" ++ xs ++ "\"" 
-compile (Identifier b xs) = if b then
+compile (Identifier b xs _) = if b then
                               "chooseInt (0,joyDepth - 1) >>= (`mk_" ++ intercalate "_" (words xs) ++ "` joyWidth)"
                             else "chooseInt (0,joyDepth) >>= (`mk_" ++ intercalate "_" (words xs) ++ "` joyWidth)"
 compile (Reserved xs) =
@@ -41,20 +43,22 @@ compile (Alternation js) =
     listj = "[" ++ intercalate ", " strjs ++ "]"
   in
     "oneof " ++ listj
-compile (Rule x (Alternation js)) =
+
+compileMain :: Rule -> String
+compileMain (Rule x (Alternation js)) =
   let
     fj = filter fst js
     sj = filter (not . fst) js
     var = intercalate "_" (words x)
   in
     if not (null fj) && not (null sj) then
-      "mk_" ++ var ++ " joyDepth joyWidth | joyDepth <= 0 = " ++ compile (Alternation fj) ++ "\nmk_" ++ var ++ " joyDepth joyWidth = " ++ compile (Alternation sj)
-    else "mk_" ++ var ++  " joyDepth joyWidth = " ++ compile (Alternation js)
-compile (Rule x j) =
+      "mk_" ++ var ++ " joyDepth joyWidth | joyDepth <= 0 = " ++ compile (Alternation fj) ++ "\nmk_" ++ var ++ " joyDepth joyWidth joyNum = " ++ compile (Alternation sj)
+    else "mk_" ++ var ++  " joyDepth joyWidth joyNum = " ++ compile (Alternation js)
+compileMain (Rule x j) =
   let
     var = intercalate "_" (words x)
   in
-    "mk_" ++ var ++  " joyDepth joyWidth = " ++ compile j
+    "mk_" ++ var ++  " joyDepth joyWidth joyNum = " ++ compile j
 
 reservedParser :: Parser String
 reservedParser = int32

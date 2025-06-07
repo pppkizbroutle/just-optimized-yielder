@@ -2,6 +2,7 @@ module Main where
 
 import Parser.Parser
 import Parser.Grammar
+import Compiler.Analyze as A
 import qualified Compiler.Translate as T
 
 import Data.List
@@ -25,5 +26,7 @@ compile x = do
       if not $ null rest then
         putStrLn $ ("Parse fail:\n" ++ show y)
         else do
+        let (xs, ys) = verify y
         putStrLn "import Data.List\nimport Test.QuickCheck\n\n"
-        putStrLn $ intercalate "\n\n" $ map T.compile y
+        putStrLn $ "joyInit = " ++ show (A.init ys) ++ "\n\n"
+        putStrLn $ intercalate "\n\n" $ map T.compileMain xs

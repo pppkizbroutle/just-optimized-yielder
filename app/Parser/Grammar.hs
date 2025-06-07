@@ -6,14 +6,16 @@ import Data.List
 
 import Parser.Parser
 
-data JoyAST = Rule String JoyAST
+data Rule = Rule String JoyAST deriving Show
+
+data JoyAST = Enum
             | Alternation [(Bool, JoyAST)]
             | Concatenation [JoyAST]
             | Group JoyAST
             | Option JoyAST
             | Repetition JoyAST (Maybe (Int, Int))
             | Reserved String
-            | Identifier Bool String
+            | Identifier Bool String Int
             | Terminal String deriving Show
 
 commentary :: Parser String
@@ -58,7 +60,18 @@ identifier = do
   sym <- tkJoyStr "*" <|> string ""
   first <- tokenJoy initialWord
   rest <- many $ tokenJoy word
-  return $ Identifier (null sym) $ intercalate " " $ first : rest
+  s <- strategy
+  return $ Identifier (null sym) (intercalate " " $ first : rest) s
+  where
+    strategy :: Parser Int
+    strategy = do
+      s <- tkJoyStr "+" <|> tkJoyStr "*" <|> tkJoyStr "^" <|> return ""
+      case s of
+        [] -> return 0
+        ['+'] -> return 1
+        ['*'] -> return 2
+        ['^'] -> return 3
+        _ -> undefined
 
 reserved :: Parser JoyAST
 reserved = do
@@ -89,6 +102,7 @@ term = terminal
        <|> grouping
        <|> option
        <|> repetition
+       <|> enum
 
 grouping :: Parser JoyAST
 grouping = do
@@ -159,15 +173,22 @@ concatenation = multiple <|> single
         Concatenation ts -> return $ Concatenation (t:ts)
         _ -> return $ Concatenation [t,rest]
 
-rule :: Parser JoyAST
-rule = do
+refs :: Parser String
+refs = do
   first <- tokenJoy initialWord
   rest <- many $ tokenJoy word
-  let xs = intercalate " " $ first : rest
+  return $ intercalate " " $ first : rest
+
+enum :: Parser JoyAST
+enum = tkJoyStr "@" >> return Enum
+
+rule :: Parser Rule
+rule = do
+  xs <- refs
   _ <- tkJoyStr "="
   alt <- alternation
   _ <- tkJoyStr ";"
   return $ Rule xs alt
 
-grammar :: Parser [JoyAST]
+grammar :: Parser [Rule]
 grammar = many rule

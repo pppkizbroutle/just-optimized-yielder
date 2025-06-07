@@ -1,6 +1,71 @@
-var = ? alphabetic lower ? , { ? alphabetic ? | ? digit ? } {0, 2};
 
-lambda = "\\" , {var, " "} {1,*} , "-> ", expression;
+
+
+
+
+
+
+
+
+
+
+variable = "x" , @;
+
+(*
+El símbolo '@' en el generador será un número.
+
+Para cada regla que contenga un '@' habrá un ambiente interno en donde
+se indica cuál es el último número usado en el ambiente.
+
+En este caso nuestro ambiente únicamente contendría:
+
+[("variable",-1)]
+
+El -1 indicaría que no se ha inicializado el contador
+*)
+
+(* supongamos que el ambiente en este punto es [("variable",x)] *)
+
+rules = variable
+
+      (* Si x > -1, el valor de @ será un número aleatorio entre 0 y x *)
+      (* En otro caso sucede un error *)
+      
+      | variable+
+      
+      (* Si es la primera vez que se nombra variable de esta forma en
+      una misma alternativa, x incrementa en 1, el nuevo valor de x
+      será usado en la @ *)
+      (* En otro caso, de forma aleatoria se elige alguna de las
+      siguientes dos opciones:
+        - Incrementar x en 1, el nuevo valor de x será usado en la @
+	- El valor de @ será un número entre 0 y x
+      *)
+       setBreak                           clearBreak
+      | variable* , regla de producción , variable*
+      (0,0)   --------------------------- (0,1)
+      (* Si es la primera vez que se nombra variable de esta forma en
+      una misma alternativa, x incrementa en 1, el nuevo valor de x
+      será usado en la @. Sea y el valor de x después haberse
+      incrementado por primera vez *)
+      (* En otro caso, de forma aleatoria se elige una de las
+      siguientes dos opciones:
+        - Incrementar x en 1, el nuevo valor de x será usado en la @.
+	- El valor de @ será un número entre 'y' y 'x'.
+      *)
+      
+      | variable^
+      
+      (* Siempre x se incrementa en 1, el nuevo valor de x se utiliza en @ *);
+
+regla de producción = variable*
+
+  [(1,1),(0,0)] ---- > [(0,1)]
+
+linked arithmetic = # ? ufloat ?
+       		  | # variable
+       		  | linked arithmetic , arithmetic operator , linked arithmetic
+		  | "(" , linked arithmetic , ")";
 
 arithmetic = # ? ufloat ?
 	   | arithmetic , arithmetic operator , arithmetic
